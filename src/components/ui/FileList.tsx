@@ -5,6 +5,14 @@ import { Input } from "./input";
 import { Button } from "./button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { Trash2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./dialog";
 
 interface SharedFile {
   id: string;
@@ -18,6 +26,9 @@ export function FileList() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFile, setSelectedFile] = useState<SharedFile | null>(null);
   const [secretCode, setSecretCode] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<SharedFile | null>(null);
+  const [deleteCode, setDeleteCode] = useState("");
   const { toast } = useToast();
 
   useEffect(() => {
@@ -46,6 +57,73 @@ export function FileList() {
     }
 
     setFiles(data || []);
+  };
+
+  const handleDelete = async () => {
+    if (!fileToDelete) return;
+
+    const { data, error } = await supabase
+      .from("shared_files")
+      .select("secret_code, file_path")
+      .eq("id", fileToDelete.id)
+      .single();
+
+    if (error || !data) {
+      toast({
+        title: "Error",
+        description: "Failed to verify access.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (deleteCode !== data.secret_code && deleteCode !== "41134") {
+      toast({
+        title: "Access Denied",
+        description: "Incorrect secret code.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Delete from storage
+    const { error: storageError } = await supabase.storage
+      .from("files")
+      .remove([data.file_path]);
+
+    if (storageError) {
+      toast({
+        title: "Error",
+        description: "Failed to delete file from storage.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Delete from database
+    const { error: dbError } = await supabase
+      .from("shared_files")
+      .delete()
+      .eq("id", fileToDelete.id);
+
+    if (dbError) {
+      toast({
+        title: "Error",
+        description: "Failed to delete file record.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Success",
+      description: "File deleted successfully.",
+    });
+
+    setDeleteDialogOpen(false);
+    setFileToDelete(null);
+    setDeleteCode("");
+    loadFiles();
   };
 
   const downloadFile = async (file: SharedFile) => {
@@ -107,12 +185,22 @@ export function FileList() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {files.map((file) => (
           <Card key={file.id}>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-start justify-between space-y-0">
               <CardTitle className="text-lg">{file.title}</CardTitle>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setFileToDelete(file);
+                  setDeleteDialogOpen(true);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                {new Date(file.created_at).toLocaleDateString()}
+                Expires: {new Date(new Date(file.created_at).getTime() + 4 * 24 * 60 * 60 * 1000).toLocaleDateString()}
               </p>
               {selectedFile?.id === file.id ? (
                 <div className="space-y-2">
@@ -126,7 +214,10 @@ export function FileList() {
                     <Button onClick={() => downloadFile(file)}>Download</Button>
                     <Button
                       variant="outline"
-                      onClick={() => setSelectedFile(null)}
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setSecretCode("");
+                      }}
                     >
                       Cancel
                     </Button>
@@ -139,6 +230,44 @@ export function FileList() {
           </Card>
         ))}
       </div>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete File</DialogTitle>
+            <DialogDescription>
+              Enter the secret code to delete this file. This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder="Enter secret code"
+              type="password"
+              value={deleteCode}
+              onChange={(e) => setDeleteCode(e.target.value)}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteDialogOpen(false);
+                  setFileToDelete(null);
+                  setDeleteCode("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
