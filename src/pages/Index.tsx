@@ -16,6 +16,12 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
+// Define types for our website texts
+type WebsiteText = {
+  id: string;
+  content: string;
+};
+
 const Index = () => {
   const [texts, setTexts] = useState({
     text1: "Loading...",
@@ -31,9 +37,13 @@ const Index = () => {
   }, []);
 
   const loadTexts = async () => {
-    const { data, error } = await supabase
+    // Use type assertion for the database query
+    const { data, error } = await (supabase
       .from('website_texts')
-      .select('id, content');
+      .select('id, content') as unknown as Promise<{ 
+        data: WebsiteText[] | null; 
+        error: any; 
+      }>);
 
     if (error) {
       toast({
@@ -44,12 +54,14 @@ const Index = () => {
       return;
     }
 
-    const textsMap = data.reduce((acc, item) => ({
-      ...acc,
-      [item.id]: item.content
-    }), {});
+    if (data) {
+      const textsMap = data.reduce((acc, item) => ({
+        ...acc,
+        [item.id]: item.content
+      }), {});
 
-    setTexts(textsMap as { text1: string; text2: string });
+      setTexts(textsMap as { text1: string; text2: string });
+    }
   };
 
   const handleEdit = (textKey: 'text1' | 'text2') => {
@@ -69,10 +81,14 @@ const Index = () => {
     }
 
     if (isEditing) {
-      const { error } = await supabase
+      // Use type assertion for the update query
+      const { error } = await (supabase
         .from('website_texts')
         .update({ content: newText })
-        .eq('id', isEditing);
+        .eq('id', isEditing) as unknown as Promise<{ 
+          data: null; 
+          error: any; 
+        }>);
 
       if (error) {
         toast({
