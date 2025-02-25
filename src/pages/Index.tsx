@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileUpload } from "@/components/ui/FileUpload";
 import { FileList } from "@/components/ui/FileList";
@@ -14,16 +14,43 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const Index = () => {
   const [texts, setTexts] = useState({
-    text1: "This has been created because of the students which were concerned on the group how they will access files in the lab",
-    text2: "This has been created by a secret team in uit university this is a great example that if you will vote our cr which we will soon be announce by us, we will be providing you with this type of helpful solutions"
+    text1: "Loading...",
+    text2: "Loading..."
   });
   const [isEditing, setIsEditing] = useState<'text1' | 'text2' | null>(null);
   const [editPassword, setEditPassword] = useState("");
   const [newText, setNewText] = useState("");
   const { toast } = useToast();
+
+  useEffect(() => {
+    loadTexts();
+  }, []);
+
+  const loadTexts = async () => {
+    const { data, error } = await supabase
+      .from('website_texts')
+      .select('id, content');
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load texts",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const textsMap = data.reduce((acc, item) => ({
+      ...acc,
+      [item.id]: item.content
+    }), {});
+
+    setTexts(textsMap as { text1: string; text2: string });
+  };
 
   const handleEdit = (textKey: 'text1' | 'text2') => {
     setIsEditing(textKey);
@@ -31,7 +58,7 @@ const Index = () => {
     setEditPassword("");
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (editPassword !== "41134") {
       toast({
         title: "Error",
@@ -42,6 +69,20 @@ const Index = () => {
     }
 
     if (isEditing) {
+      const { error } = await supabase
+        .from('website_texts')
+        .update({ content: newText })
+        .eq('id', isEditing);
+
+      if (error) {
+        toast({
+          title: "Error",
+          description: "Failed to update text",
+          variant: "destructive",
+        });
+        return;
+      }
+
       setTexts(prev => ({
         ...prev,
         [isEditing]: newText
