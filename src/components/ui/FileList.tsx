@@ -153,7 +153,9 @@ export function FileList() {
     }
 
     // For iOS, create a temporary signed URL that opens in a new tab
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    // Using a safer iOS detection method that doesn't rely on MSStream
+    const userAgent = navigator.userAgent || navigator.vendor || '';
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
 
     if (isIOS) {
       const { data: signedURLData } = await supabase.storage
