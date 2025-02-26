@@ -30,6 +30,7 @@ export function FileList() {
   const [fileToDelete, setFileToDelete] = useState<SharedFile | null>(null);
   const [deleteCode, setDeleteCode] = useState("");
   const { toast } = useToast();
+  const [publicURL, setPublicURL] = useState<string | null>(null);
 
   useEffect(() => {
     loadFiles();
@@ -151,6 +152,33 @@ export function FileList() {
       return;
     }
 
+    // For iOS, create a temporary signed URL that opens in a new tab
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+    if (isIOS) {
+      const { data: signedURLData } = await supabase.storage
+        .from("files")
+        .createSignedUrl(data.file_path, 60); // 60 seconds expiry
+      
+      if (signedURLData?.signedUrl) {
+        setPublicURL(signedURLData.signedUrl);
+        // Open the signed URL in a new tab
+        window.open(signedURLData.signedUrl, '_blank');
+        toast({
+          title: "File Access Granted",
+          description: "The file should open in a new tab. If it doesn't, click the download button again.",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to create download link.",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+
+    // For non-iOS devices, use the original direct download method
     const { data: fileData, error: downloadError } = await supabase.storage
       .from("files")
       .download(data.file_path);
