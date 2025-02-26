@@ -37,6 +37,7 @@ export function FileList() {
   }, [searchQuery]);
 
   const loadFiles = async () => {
+    console.log("Loading files...");
     let query = supabase
       .from("shared_files")
       .select("id, title, filename, created_at")
@@ -46,7 +47,7 @@ export function FileList() {
       query = query.ilike("title", `%${searchQuery}%`);
     }
 
-    const { data, error } = await query.limit(10);
+    const { data, error } = await query;
 
     if (error) {
       toast({
@@ -54,9 +55,11 @@ export function FileList() {
         description: "Failed to load files.",
         variant: "destructive",
       });
+      console.error("Error loading files:", error);
       return;
     }
 
+    console.log("Files loaded:", data);
     setFiles(data || []);
   };
 
