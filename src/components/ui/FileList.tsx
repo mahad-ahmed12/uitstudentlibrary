@@ -5,7 +5,7 @@ import { Input } from "./input";
 import { Button } from "./button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Trash2 } from "lucide-react";
+import { Trash2, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,7 @@ export function FileList() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<SharedFile | null>(null);
   const [deleteCode, setDeleteCode] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
   const [publicURL, setPublicURL] = useState<string | null>(null);
 
@@ -131,81 +132,84 @@ export function FileList() {
   };
 
   const downloadFile = async (file: SharedFile) => {
-    const { data, error } = await supabase
-      .from("shared_files")
-      .select("secret_code, file_path")
-      .eq("id", file.id)
-      .single();
+    if (isDownloading) return;
+    
+    setIsDownloading(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from("shared_files")
+        .select("secret_code, file_path")
+        .eq("id", file.id)
+        .single();
 
-    if (error || !data) {
-      toast({
-        title: "Error",
-        description: "Failed to verify access.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Check for root access code or the file-specific code
-    if (secretCode !== data.secret_code && secretCode !== "41134") {
-      toast({
-        title: "Access Denied",
-        description: "Incorrect secret code.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // For iOS, create a temporary signed URL that opens in a new tab
-    // Using a safer iOS detection method that doesn't rely on MSStream
-    const userAgent = navigator.userAgent || navigator.vendor || '';
-    const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
-
-    if (isIOS) {
-      const { data: signedURLData } = await supabase.storage
-        .from("files")
-        .createSignedUrl(data.file_path, 60); // 60 seconds expiry
-      
-      if (signedURLData?.signedUrl) {
-        setPublicURL(signedURLData.signedUrl);
-        // Open the signed URL in a new tab
-        window.open(signedURLData.signedUrl, '_blank');
+      if (error || !data) {
         toast({
-          title: "File Access Granted",
-          description: "The file should open in a new tab. If it doesn't, click the download button again.",
+          title: "Error",
+          description: "Failed to verify access.",
+          variant: "destructive",
         });
-      } else {
+        return;
+      }
+
+      // Check for root access code or the file-specific code
+      if (secretCode !== data.secret_code && secretCode !== "41134") {
+        toast({
+          title: "Access Denied",
+          description: "Incorrect secret code.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Check if user is on iOS
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      
+      // For all devices, use signed URLs which work better across all platforms
+      const { data: signedURLData, error: signedURLError } = await supabase.storage
+        .from("files")
+        .createSignedUrl(data.file_path, 300); // 5 minutes expiry for better user experience
+      
+      if (signedURLError || !signedURLData?.signedUrl) {
         toast({
           title: "Error",
           description: "Failed to create download link.",
           variant: "destructive",
         });
+        return;
       }
-      return;
-    }
-
-    // For non-iOS devices, use the original direct download method
-    const { data: fileData, error: downloadError } = await supabase.storage
-      .from("files")
-      .download(data.file_path);
-
-    if (downloadError) {
+      
+      if (isIOS) {
+        // For iOS, open the signed URL in a new tab
+        window.open(signedURLData.signedUrl, '_blank');
+        toast({
+          title: "File Access Granted",
+          description: "The file is opening in a new tab.",
+        });
+      } else {
+        // For non-iOS, create a temporary link and click it
+        const a = document.createElement("a");
+        a.href = signedURLData.signedUrl;
+        a.download = file.filename;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(signedURLData.signedUrl);
+        document.body.removeChild(a);
+      }
+      
+      setSelectedFile(null);
+      setSecretCode("");
+    } catch (err) {
+      console.error("Download error:", err);
       toast({
         title: "Error",
-        description: "Failed to download file.",
+        description: "An unexpected error occurred during download.",
         variant: "destructive",
       });
-      return;
+    } finally {
+      setIsDownloading(false);
     }
-
-    const url = URL.createObjectURL(fileData);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.filename;
-    a.click();
-    URL.revokeObjectURL(url);
-    setSelectedFile(null);
-    setSecretCode("");
   };
 
   return (
@@ -245,13 +249,20 @@ export function FileList() {
                     onChange={(e) => setSecretCode(e.target.value)}
                   />
                   <div className="flex gap-2">
-                    <Button onClick={() => downloadFile(file)}>Download</Button>
+                    <Button 
+                      onClick={() => downloadFile(file)}
+                      disabled={isDownloading}
+                    >
+                      {isDownloading ? "Preparing..." : "Download"}
+                      {!isDownloading && <Download className="ml-2 h-4 w-4" />}
+                    </Button>
                     <Button
                       variant="outline"
                       onClick={() => {
                         setSelectedFile(null);
                         setSecretCode("");
                       }}
+                      disabled={isDownloading}
                     >
                       Cancel
                     </Button>

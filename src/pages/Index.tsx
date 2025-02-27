@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { Helmet } from "react-helmet";
 
 // Define types for our website texts
 type WebsiteText = {
@@ -114,101 +115,106 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Student Library
-          </h1>
-          <p className="text-lg text-gray-600 mb-4">
-            Upload and share files securely with secret codes
-          </p>
-          <div className="space-y-4">
-            <div className="relative">
-              <p className="text-lg bg-green-100/50 p-4 rounded-lg">
-                {texts.text1}
-              </p>
-              <Button 
-                variant="ghost" 
-                size="icon"
-                className="absolute top-2 right-2"
-                onClick={() => handleEdit('text1')}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
+    <>
+      <Helmet>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+      </Helmet>
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-3 sm:p-6">
+        <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8">
+          <div className="text-center">
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
+              Student Library
+            </h1>
+            <p className="text-base sm:text-lg text-gray-600 mb-3 sm:mb-4">
+              Upload and share files securely with secret codes
+            </p>
+            <div className="space-y-3 sm:space-y-4">
+              <div className="relative">
+                <p className="text-base sm:text-lg bg-green-100/50 p-3 sm:p-4 rounded-lg">
+                  {texts.text1}
+                </p>
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  className="absolute top-2 right-2"
+                  onClick={() => handleEdit('text1')}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="relative">
+                <p className="text-base sm:text-lg bg-green-100/50 p-3 sm:p-4 rounded-lg">
+                  {texts.text2}
+                </p>
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  className="absolute top-2 right-2"
+                  onClick={() => handleEdit('text2')}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-            <div className="relative">
-              <p className="text-lg bg-green-100/50 p-4 rounded-lg">
-                {texts.text2}
-              </p>
-              <Button 
-                variant="ghost" 
-                size="icon"
-                className="absolute top-2 right-2"
-                onClick={() => handleEdit('text2')}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-            </div>
+          </div>
+
+          <div className="grid gap-4 sm:gap-8">
+            <Card>
+              <CardHeader>
+                <CardTitle>Upload File</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <FileUpload />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Uploads</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <FileList />
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="text-center text-xs sm:text-sm text-gray-500 mt-6 sm:mt-8">
+            By proceeding, you acknowledge that the submitted content may be reviewed and utilized as part of the platform's
           </div>
         </div>
 
-        <div className="grid gap-8 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Upload File</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <FileUpload />
-            </CardContent>
-          </Card>
-
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle>Recent Uploads</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <FileList />
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="text-center text-sm text-gray-500 mt-8">
-          By proceeding, you acknowledge that the submitted content may be reviewed and utilized as part of the platform's
-        </div>
+        <Dialog open={isEditing !== null} onOpenChange={() => setIsEditing(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Text</DialogTitle>
+              <DialogDescription>
+                Enter the admin password to make changes
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                placeholder="Enter new text"
+                value={newText}
+                onChange={(e) => setNewText(e.target.value)}
+                className="mb-2"
+              />
+              <Input
+                type="password"
+                placeholder="Enter admin password"
+                value={editPassword}
+                onChange={(e) => setEditPassword(e.target.value)}
+              />
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setIsEditing(null)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSave}>Save Changes</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
-
-      <Dialog open={isEditing !== null} onOpenChange={() => setIsEditing(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Text</DialogTitle>
-            <DialogDescription>
-              Enter the admin password to make changes
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Input
-              placeholder="Enter new text"
-              value={newText}
-              onChange={(e) => setNewText(e.target.value)}
-              className="mb-2"
-            />
-            <Input
-              type="password"
-              placeholder="Enter admin password"
-              value={editPassword}
-              onChange={(e) => setEditPassword(e.target.value)}
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsEditing(null)}>
-                Cancel
-              </Button>
-              <Button onClick={handleSave}>Save Changes</Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+    </>
   );
 };
 
