@@ -5,59 +5,135 @@ import { Input } from "./input";
 import { Label } from "./label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { FileIcon, FolderIcon } from "lucide-react";
 
 export function FileUpload() {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<FileList | null>(null);
   const [title, setTitle] = useState("");
   const [secretCode, setSecretCode] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isFolder, setIsFolder] = useState(false);
   const { toast } = useToast();
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFiles(e.target.files);
+      // Auto-populate title with folder name if it's a folder upload
+      if (e.target.webkitdirectory && e.target.files.length > 0) {
+        const firstFile = e.target.files[0];
+        const folderPath = firstFile.webkitRelativePath;
+        const folderName = folderPath.split('/')[0];
+        setTitle(folderName);
+        setIsFolder(true);
+      } else {
+        setIsFolder(false);
+      }
+    }
+  };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !title || !secretCode) {
+    if (!files || files.length === 0 || !title || !secretCode) {
       toast({
         title: "Missing information",
-        description: "Please fill in all fields and select a file.",
+        description: "Please fill in all fields and select file(s).",
         variant: "destructive",
       });
       return;
     }
 
     setIsUploading(true);
+    setUploadProgress(0);
+
     try {
-      const fileExt = file.name.split(".").pop();
-      const filePath = `${crypto.randomUUID()}.${fileExt}`;
+      if (isFolder) {
+        // Folder upload - we'll upload each file while maintaining folder structure
+        const totalFiles = files.length;
+        let filesProcessed = 0;
+        
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const relativePath = (file as any).webkitRelativePath;
+          
+          // Create path that preserves folder structure
+          const filePath = `${title}/${relativePath}`;
+          
+          // Upload the file to Supabase storage
+          const { error: uploadError } = await supabase.storage
+            .from("files")
+            .upload(filePath, file, {
+              contentType: file.type,
+              upsert: false
+            });
 
-      const { error: uploadError } = await supabase.storage
-        .from("files")
-        .upload(filePath, file);
+          if (uploadError) {
+            console.error(`Error uploading ${filePath}:`, uploadError);
+            // Continue with other files even if one fails
+          }
+          
+          // Record in database
+          const { error: dbError } = await supabase.from("shared_files").insert({
+            title,
+            filename: relativePath,
+            file_path: filePath,
+            secret_code: secretCode,
+            content_type: file.type,
+            size: file.size,
+          });
+          
+          if (dbError) {
+            console.error(`Error saving metadata for ${filePath}:`, dbError);
+          }
+          
+          // Update progress
+          filesProcessed++;
+          setUploadProgress(Math.round((filesProcessed / totalFiles) * 100));
+        }
+        
+        toast({
+          title: "Success!",
+          description: `Folder '${title}' with ${totalFiles} files has been uploaded.`,
+        });
+      } else {
+        // Single file upload - use existing logic
+        const file = files[0];
+        const fileExt = file.name.split(".").pop();
+        const filePath = `${crypto.randomUUID()}.${fileExt}`;
 
-      if (uploadError) throw uploadError;
+        const { error: uploadError } = await supabase.storage
+          .from("files")
+          .upload(filePath, file);
 
-      const { error: dbError } = await supabase.from("shared_files").insert({
-        title,
-        filename: file.name,
-        file_path: filePath,
-        secret_code: secretCode,
-        content_type: file.type,
-        size: file.size,
-      });
+        if (uploadError) throw uploadError;
 
-      if (dbError) throw dbError;
+        const { error: dbError } = await supabase.from("shared_files").insert({
+          title,
+          filename: file.name,
+          file_path: filePath,
+          secret_code: secretCode,
+          content_type: file.type,
+          size: file.size,
+        });
 
-      toast({
-        title: "Success!",
-        description: "Your file has been uploaded.",
-      });
+        if (dbError) throw dbError;
 
-      setFile(null);
+        toast({
+          title: "Success!",
+          description: "Your file has been uploaded.",
+        });
+      }
+
+      setFiles(null);
       setTitle("");
       setSecretCode("");
+      setUploadProgress(0);
+      setIsFolder(false);
     } catch (error) {
+      console.error("Upload error:", error);
       toast({
         title: "Error",
-        description: "Failed to upload file. Please try again.",
+        description: "Failed to upload. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -73,7 +149,7 @@ export function FileUpload() {
           id="title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Enter a title for your file"
+          placeholder="Enter a title for your file/folder"
           required
         />
       </div>
@@ -87,17 +163,84 @@ export function FileUpload() {
           required
         />
       </div>
-      <div>
-        <Label htmlFor="file">File</Label>
+      <div className="space-y-2">
+        <Label>Upload Type</Label>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex-1">
+            <Button
+              type="button"
+              variant={!isFolder ? "default" : "outline"}
+              className="w-full justify-center items-center gap-2"
+              onClick={() => {
+                setIsFolder(false);
+                const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+                if (fileInput) {
+                  fileInput.webkitdirectory = false;
+                  fileInput.multiple = false;
+                  fileInput.click();
+                }
+              }}
+            >
+              <FileIcon className="w-4 h-4" /> Single File
+            </Button>
+          </div>
+          <div className="flex-1">
+            <Button
+              type="button"
+              variant={isFolder ? "default" : "outline"}
+              className="w-full justify-center items-center gap-2"
+              onClick={() => {
+                setIsFolder(true);
+                const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+                if (fileInput) {
+                  fileInput.webkitdirectory = true;
+                  fileInput.multiple = true;
+                  fileInput.click();
+                }
+              }}
+            >
+              <FolderIcon className="w-4 h-4" /> Folder
+            </Button>
+          </div>
+        </div>
+      </div>
+      <div className="hidden">
         <Input
-          id="file"
+          id="fileInput"
           type="file"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          webkitdirectory={isFolder ? "" : undefined}
+          multiple={isFolder}
+          onChange={handleFileChange}
           required
         />
       </div>
-      <Button type="submit" disabled={isUploading}>
-        {isUploading ? "Uploading..." : "Upload File"}
+      {files && files.length > 0 && (
+        <div className="bg-gray-50 p-3 rounded-md">
+          {isFolder ? (
+            <div>
+              <p className="font-medium">Folder: {title}</p>
+              <p className="text-sm text-gray-500">{files.length} files selected</p>
+            </div>
+          ) : (
+            <p className="font-medium">File: {files[0].name}</p>
+          )}
+        </div>
+      )}
+      {isUploading && uploadProgress > 0 && (
+        <div className="w-full bg-gray-200 rounded-full h-2.5">
+          <div 
+            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+            style={{ width: `${uploadProgress}%` }}
+          ></div>
+          <p className="text-xs text-gray-500 mt-1 text-center">{uploadProgress}% complete</p>
+        </div>
+      )}
+      <Button type="submit" disabled={isUploading} className="w-full">
+        {isUploading ? 
+          (isFolder ? `Uploading folder (${uploadProgress}%)...` : "Uploading...") 
+          : 
+          (isFolder ? "Upload Folder" : "Upload File")
+        }
       </Button>
     </form>
   );
