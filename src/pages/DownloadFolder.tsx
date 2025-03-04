@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Helmet } from "react-helmet";
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 
 const DownloadFolder = () => {
   const [searchParams] = useSearchParams();
@@ -16,6 +17,7 @@ const DownloadFolder = () => {
   const [isError, setIsError] = useState(false);
   const [isGeneratingZip, setIsGeneratingZip] = useState(false);
   const [progressMessage, setProgressMessage] = useState("Verifying folder access...");
+  const { toast } = useToast();
 
   useEffect(() => {
     const checkAccess = async () => {
@@ -48,6 +50,14 @@ const DownloadFolder = () => {
           return;
         }
 
+        // Make sure this is actually a folder
+        if (!folderData.is_folder) {
+          console.error("This is not a folder");
+          setIsError(true);
+          setIsLoading(false);
+          return;
+        }
+
         setFolderInfo(folderData);
         setIsLoading(false);
       } catch (err) {
@@ -70,13 +80,39 @@ const DownloadFolder = () => {
       // List all files in the folder
       const folderPath = folderInfo.file_path;
       
-      // Create a ZIP file of the folder
+      setProgressMessage("Listing files in folder...");
+      
+      // Get all files in the folder
+      const { data: folderFiles, error: listError } = await supabase.storage
+        .from("files")
+        .list(folderPath);
+        
+      if (listError) {
+        console.error("Error listing folder files:", listError);
+        throw new Error("Failed to list files in folder");
+      }
+      
+      if (!folderFiles || folderFiles.length === 0) {
+        toast({
+          title: "Empty Folder",
+          description: "This folder appears to be empty.",
+          variant: "destructive",
+        });
+        setIsGeneratingZip(false);
+        return;
+      }
+      
+      setProgressMessage(`Found ${folderFiles.length} files. Creating ZIP archive...`);
+      
+      // Create a request to our backend to generate a ZIP file
       const response = await fetch(`/api/download-folder?folderId=${folderId}&code=${code}`, {
         method: 'GET',
       });
       
       if (!response.ok) {
-        throw new Error('Failed to create ZIP file');
+        const errorData = await response.json().catch(() => ({}));
+        console.error("ZIP creation error:", errorData);
+        throw new Error(errorData.message || 'Failed to create ZIP file');
       }
       
       // For downloading directly
@@ -85,15 +121,28 @@ const DownloadFolder = () => {
       const a = document.createElement('a');
       a.href = url;
       a.download = `${folderInfo.title}.zip`;
+      document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
       
       setProgressMessage("Download complete!");
+      toast({
+        title: "Success",
+        description: "Your folder download has started.",
+      });
     } catch (error) {
       console.error("Error creating ZIP:", error);
-      setProgressMessage("Error creating ZIP file. Try downloading files individually.");
+      setProgressMessage("Error creating ZIP file. Try again later.");
+      toast({
+        title: "Download Failed",
+        description: error instanceof Error ? error.message : "Failed to create ZIP file",
+        variant: "destructive",
+      });
     } finally {
-      setIsGeneratingZip(false);
+      setTimeout(() => {
+        setIsGeneratingZip(false);
+      }, 1500); // Keep the message visible briefly
     }
   };
 
@@ -119,7 +168,7 @@ const DownloadFolder = () => {
         </Helmet>
         <div className="max-w-md mx-auto p-6 text-center">
           <h1 className="text-2xl font-bold text-red-600 mb-4">Access Denied</h1>
-          <p className="mb-6">Invalid folder ID or secret code. Please check your URL and try again.</p>
+          <p className="mb-6">Invalid folder ID, secret code, or this is not a folder. Please check your URL and try again.</p>
           <Link to="/">
             <Button>
               <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
