@@ -117,7 +117,6 @@ const Index = () => {
   return (
     <>
       <Helmet>
-        <title>Student Library</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
       </Helmet>
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-3 sm:p-6">
@@ -162,7 +161,7 @@ const Index = () => {
           <div className="grid gap-4 sm:gap-8">
             <Card>
               <CardHeader>
-                <CardTitle>Upload File or Folder</CardTitle>
+                <CardTitle>Upload File</CardTitle>
               </CardHeader>
               <CardContent>
                 <FileUpload />
