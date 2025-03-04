@@ -7,6 +7,13 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { FileIcon, FolderIcon } from "lucide-react";
 
+// Add TypeScript declaration for the webkitdirectory property
+declare module 'react' {
+  interface InputHTMLAttributes<T> extends HTMLAttributes<T> {
+    webkitdirectory?: string;
+  }
+}
+
 export function FileUpload() {
   const [files, setFiles] = useState<FileList | null>(null);
   const [title, setTitle] = useState("");
@@ -52,12 +59,34 @@ export function FileUpload() {
         const totalFiles = files.length;
         let filesProcessed = 0;
         
+        // Create a single database entry for the entire folder
+        const folderId = crypto.randomUUID();
+        
+        // Store metadata about the folder
+        const { error: folderDbError } = await supabase.from("shared_files").insert({
+          id: folderId,
+          title,
+          filename: title,
+          file_path: `folders/${folderId}`,
+          secret_code: secretCode,
+          content_type: "folder",
+          size: Array.from(files).reduce((total, file) => total + file.size, 0),
+          is_folder: true,
+          file_count: files.length
+        });
+        
+        if (folderDbError) {
+          console.error("Error saving folder metadata:", folderDbError);
+          throw folderDbError;
+        }
+        
+        // Now upload all files to storage with paths that preserve folder structure
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           const relativePath = (file as any).webkitRelativePath;
           
-          // Create path that preserves folder structure
-          const filePath = `${title}/${relativePath}`;
+          // Create path that preserves folder structure under the folder ID
+          const filePath = `folders/${folderId}/${relativePath}`;
           
           // Upload the file to Supabase storage
           const { error: uploadError } = await supabase.storage
@@ -70,20 +99,6 @@ export function FileUpload() {
           if (uploadError) {
             console.error(`Error uploading ${filePath}:`, uploadError);
             // Continue with other files even if one fails
-          }
-          
-          // Record in database
-          const { error: dbError } = await supabase.from("shared_files").insert({
-            title,
-            filename: relativePath,
-            file_path: filePath,
-            secret_code: secretCode,
-            content_type: file.type,
-            size: file.size,
-          });
-          
-          if (dbError) {
-            console.error(`Error saving metadata for ${filePath}:`, dbError);
           }
           
           // Update progress
@@ -114,6 +129,7 @@ export function FileUpload() {
           secret_code: secretCode,
           content_type: file.type,
           size: file.size,
+          is_folder: false,
         });
 
         if (dbError) throw dbError;
@@ -175,7 +191,7 @@ export function FileUpload() {
                 setIsFolder(false);
                 const fileInput = document.getElementById('fileInput') as HTMLInputElement;
                 if (fileInput) {
-                  fileInput.webkitdirectory = false;
+                  fileInput.webkitdirectory = "";
                   fileInput.multiple = false;
                   fileInput.click();
                 }
@@ -193,7 +209,7 @@ export function FileUpload() {
                 setIsFolder(true);
                 const fileInput = document.getElementById('fileInput') as HTMLInputElement;
                 if (fileInput) {
-                  fileInput.webkitdirectory = true;
+                  fileInput.webkitdirectory = "";
                   fileInput.multiple = true;
                   fileInput.click();
                 }

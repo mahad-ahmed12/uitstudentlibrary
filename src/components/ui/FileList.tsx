@@ -5,7 +5,7 @@ import { Input } from "./input";
 import { Button } from "./button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Trash2, Download } from "lucide-react";
+import { Trash2, Download, FolderDown, FileIcon, FolderIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,8 @@ interface SharedFile {
   title: string;
   filename: string;
   created_at: string;
+  is_folder?: boolean;
+  file_count?: number;
 }
 
 export function FileList() {
@@ -31,7 +33,6 @@ export function FileList() {
   const [deleteCode, setDeleteCode] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
-  const [publicURL, setPublicURL] = useState<string | null>(null);
 
   useEffect(() => {
     loadFiles();
@@ -41,7 +42,7 @@ export function FileList() {
     console.log("Loading files...");
     let query = supabase
       .from("shared_files")
-      .select("id, title, filename, created_at")
+      .select("id, title, filename, created_at, is_folder, file_count")
       .order("created_at", { ascending: false });
 
     if (searchQuery) {
@@ -69,7 +70,7 @@ export function FileList() {
 
     const { data, error } = await supabase
       .from("shared_files")
-      .select("secret_code, file_path")
+      .select("secret_code, file_path, is_folder")
       .eq("id", fileToDelete.id)
       .single();
 
@@ -91,44 +92,79 @@ export function FileList() {
       return;
     }
 
-    // Delete from storage
-    const { error: storageError } = await supabase.storage
-      .from("files")
-      .remove([data.file_path]);
+    try {
+      if (data.is_folder) {
+        // For folders, we need to list all files in that folder and delete them
+        const folderPrefix = data.file_path;
+        const { data: folderFiles, error: listError } = await supabase.storage
+          .from("files")
+          .list(folderPrefix, { limit: 10000 });
+          
+        if (listError) {
+          console.error("Error listing folder files:", listError);
+          throw listError;
+        }
+        
+        if (folderFiles && folderFiles.length > 0) {
+          const filePaths = folderFiles.map(file => `${folderPrefix}/${file.name}`);
+          
+          // Delete files in batches of 1000 (Supabase limit)
+          for (let i = 0; i < filePaths.length; i += 1000) {
+            const batch = filePaths.slice(i, i + 1000);
+            const { error: batchDeleteError } = await supabase.storage
+              .from("files")
+              .remove(batch);
+              
+            if (batchDeleteError) {
+              console.error(`Error deleting batch ${i}:`, batchDeleteError);
+            }
+          }
+        }
+        
+        // Also try to delete the folder itself
+        await supabase.storage
+          .from("files")
+          .remove([folderPrefix]);
+      } else {
+        // Delete single file from storage
+        const { error: storageError } = await supabase.storage
+          .from("files")
+          .remove([data.file_path]);
 
-    if (storageError) {
+        if (storageError) {
+          console.error("Error deleting from storage:", storageError);
+          throw storageError;
+        }
+      }
+
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from("shared_files")
+        .delete()
+        .eq("id", fileToDelete.id);
+
+      if (dbError) {
+        console.error("Error deleting from database:", dbError);
+        throw dbError;
+      }
+
+      toast({
+        title: "Success",
+        description: "File deleted successfully.",
+      });
+
+      setDeleteDialogOpen(false);
+      setFileToDelete(null);
+      setDeleteCode("");
+      loadFiles();
+    } catch (error) {
+      console.error("Delete error:", error);
       toast({
         title: "Error",
-        description: "Failed to delete file from storage.",
+        description: "Failed to delete file. Some files may have been removed.",
         variant: "destructive",
       });
-      return;
     }
-
-    // Delete from database
-    const { error: dbError } = await supabase
-      .from("shared_files")
-      .delete()
-      .eq("id", fileToDelete.id);
-
-    if (dbError) {
-      toast({
-        title: "Error",
-        description: "Failed to delete file record.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    toast({
-      title: "Success",
-      description: "File deleted successfully.",
-    });
-
-    setDeleteDialogOpen(false);
-    setFileToDelete(null);
-    setDeleteCode("");
-    loadFiles();
   };
 
   const downloadFile = async (file: SharedFile) => {
@@ -139,7 +175,7 @@ export function FileList() {
     try {
       const { data, error } = await supabase
         .from("shared_files")
-        .select("secret_code, file_path")
+        .select("secret_code, file_path, is_folder, content_type")
         .eq("id", file.id)
         .single();
 
@@ -162,40 +198,62 @@ export function FileList() {
         return;
       }
 
-      // Check if user is on iOS
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       
-      // For all devices, use signed URLs which work better across all platforms
-      const { data: signedURLData, error: signedURLError } = await supabase.storage
-        .from("files")
-        .createSignedUrl(data.file_path, 300); // 5 minutes expiry for better user experience
-      
-      if (signedURLError || !signedURLData?.signedUrl) {
+      if (data.is_folder) {
+        // For folders, we need to create a ZIP file download
         toast({
-          title: "Error",
-          description: "Failed to create download link.",
-          variant: "destructive",
+          title: "Starting Folder Download",
+          description: "Preparing folder for download. This may take a moment for large folders.",
         });
-        return;
-      }
-      
-      if (isIOS) {
-        // For iOS, open the signed URL in a new tab
-        window.open(signedURLData.signedUrl, '_blank');
+        
+        // Show preparing message
+        setIsDownloading(true);
+        
+        // Create a signed URL for the folder to access it
+        const folderPath = data.file_path;
+        
+        // Open folder download in a new tab (works better for large downloads)
+        const downloadUrl = `${window.location.origin}/download-folder?folderId=${file.id}&code=${encodeURIComponent(secretCode)}`;
+        window.open(downloadUrl, '_blank');
+        
         toast({
-          title: "File Access Granted",
-          description: "The file is opening in a new tab.",
+          title: "Folder Download Started",
+          description: "Your folder is being prepared in a new tab. Please wait while the files are zipped.",
         });
       } else {
-        // For non-iOS, create a temporary link and click it
-        const a = document.createElement("a");
-        a.href = signedURLData.signedUrl;
-        a.download = file.filename;
-        a.style.display = "none";
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(signedURLData.signedUrl);
-        document.body.removeChild(a);
+        // Single file download logic
+        const { data: signedURLData, error: signedURLError } = await supabase.storage
+          .from("files")
+          .createSignedUrl(data.file_path, 600); // 10 minutes expiry for better user experience
+        
+        if (signedURLError || !signedURLData?.signedUrl) {
+          toast({
+            title: "Error",
+            description: "Failed to create download link.",
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        if (isIOS) {
+          // For iOS, open the signed URL in a new tab
+          window.open(signedURLData.signedUrl, '_blank');
+          toast({
+            title: "File Access Granted",
+            description: "The file is opening in a new tab.",
+          });
+        } else {
+          // For non-iOS, create a temporary link and click it
+          const a = document.createElement("a");
+          a.href = signedURLData.signedUrl;
+          a.download = file.filename;
+          a.style.display = "none";
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(signedURLData.signedUrl);
+          document.body.removeChild(a);
+        }
       }
       
       setSelectedFile(null);
@@ -224,7 +282,14 @@ export function FileList() {
         {files.map((file) => (
           <Card key={file.id}>
             <CardHeader className="flex flex-row items-start justify-between space-y-0">
-              <CardTitle className="text-lg">{file.title}</CardTitle>
+              <div className="flex items-center gap-2">
+                {file.is_folder ? (
+                  <FolderIcon className="h-5 w-5 text-blue-500" />
+                ) : (
+                  <FileIcon className="h-5 w-5 text-gray-500" />
+                )}
+                <CardTitle className="text-lg">{file.title}</CardTitle>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
@@ -237,6 +302,13 @@ export function FileList() {
               </Button>
             </CardHeader>
             <CardContent>
+              <p className="text-sm text-muted-foreground mb-2">
+                {file.is_folder ? (
+                  `${file.file_count || 0} files`
+                ) : (
+                  file.filename
+                )}
+              </p>
               <p className="text-sm text-muted-foreground mb-4">
                 Expires: {new Date(new Date(file.created_at).getTime() + 4 * 24 * 60 * 60 * 1000).toLocaleDateString()}
               </p>
@@ -252,9 +324,14 @@ export function FileList() {
                     <Button 
                       onClick={() => downloadFile(file)}
                       disabled={isDownloading}
+                      className="flex gap-2 items-center"
                     >
                       {isDownloading ? "Preparing..." : "Download"}
-                      {!isDownloading && <Download className="ml-2 h-4 w-4" />}
+                      {!isDownloading && file.is_folder ? (
+                        <FolderDown className="h-4 w-4" />
+                      ) : (
+                        !isDownloading && <Download className="h-4 w-4" />
+                      )}
                     </Button>
                     <Button
                       variant="outline"
@@ -269,7 +346,9 @@ export function FileList() {
                   </div>
                 </div>
               ) : (
-                <Button onClick={() => setSelectedFile(file)}>Access File</Button>
+                <Button onClick={() => setSelectedFile(file)}>
+                  {file.is_folder ? "Access Folder" : "Access File"}
+                </Button>
               )}
             </CardContent>
           </Card>
@@ -279,9 +358,9 @@ export function FileList() {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete File</DialogTitle>
+            <DialogTitle>Delete {fileToDelete?.is_folder ? "Folder" : "File"}</DialogTitle>
             <DialogDescription>
-              Enter the secret code to delete this file. This action cannot be
+              Enter the secret code to delete this {fileToDelete?.is_folder ? "folder" : "file"}. This action cannot be
               undone.
             </DialogDescription>
           </DialogHeader>
