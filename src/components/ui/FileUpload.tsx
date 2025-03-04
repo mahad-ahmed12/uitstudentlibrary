@@ -10,7 +10,7 @@ import { FileIcon, FolderIcon } from "lucide-react";
 // Add TypeScript declaration for the webkitdirectory property
 declare module 'react' {
   interface InputHTMLAttributes<T> extends HTMLAttributes<T> {
-    webkitdirectory?: string;
+    webkitdirectory?: boolean;
   }
 }
 
@@ -191,7 +191,7 @@ export function FileUpload() {
                 setIsFolder(false);
                 const fileInput = document.getElementById('fileInput') as HTMLInputElement;
                 if (fileInput) {
-                  fileInput.webkitdirectory = "";
+                  fileInput.webkitdirectory = false;
                   fileInput.multiple = false;
                   fileInput.click();
                 }
@@ -209,7 +209,7 @@ export function FileUpload() {
                 setIsFolder(true);
                 const fileInput = document.getElementById('fileInput') as HTMLInputElement;
                 if (fileInput) {
-                  fileInput.webkitdirectory = "";
+                  fileInput.webkitdirectory = true;
                   fileInput.multiple = true;
                   fileInput.click();
                 }
@@ -224,7 +224,7 @@ export function FileUpload() {
         <Input
           id="fileInput"
           type="file"
-          webkitdirectory={isFolder ? "" : undefined}
+          webkitdirectory={isFolder}
           multiple={isFolder}
           onChange={handleFileChange}
           required

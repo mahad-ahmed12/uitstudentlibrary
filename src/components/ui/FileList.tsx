@@ -19,7 +19,7 @@ interface SharedFile {
   title: string;
   filename: string;
   created_at: string;
-  is_folder?: boolean;
+  is_folder: boolean;
   file_count?: number;
 }
 
