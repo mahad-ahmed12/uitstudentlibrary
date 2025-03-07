@@ -238,7 +238,7 @@ export function FileList() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                Expires: {new Date(new Date(file.created_at).getTime() + 4 * 24 * 60 * 60 * 1000).toLocaleDateString()}
+                {file.filename}
               </p>
               {selectedFile?.id === file.id ? (
                 <div className="space-y-2">
