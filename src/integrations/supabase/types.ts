@@ -18,6 +18,7 @@ export type Database = {
           filename: string
           id: string
           is_folder: boolean | null
+          is_verified: boolean | null
           secret_code: string
           size: number | null
           title: string
@@ -30,6 +31,7 @@ export type Database = {
           filename: string
           id?: string
           is_folder?: boolean | null
+          is_verified?: boolean | null
           secret_code: string
           size?: number | null
           title: string
@@ -42,6 +44,7 @@ export type Database = {
           filename?: string
           id?: string
           is_folder?: boolean | null
+          is_verified?: boolean | null
           secret_code?: string
           size?: number | null
           title?: string

@@ -5,7 +5,7 @@ import { Input } from "./input";
 import { Button } from "./button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Trash2, Download } from "lucide-react";
+import { Trash2, Download, CheckCircle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ interface SharedFile {
   title: string;
   filename: string;
   created_at: string;
+  is_verified?: boolean;
 }
 
 export function FileList() {
@@ -31,7 +32,6 @@ export function FileList() {
   const [deleteCode, setDeleteCode] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
-  const [publicURL, setPublicURL] = useState<string | null>(null);
 
   useEffect(() => {
     loadFiles();
@@ -41,7 +41,7 @@ export function FileList() {
     console.log("Loading files...");
     let query = supabase
       .from("shared_files")
-      .select("id, title, filename, created_at")
+      .select("id, title, filename, created_at, is_verified")
       .order("created_at", { ascending: false });
 
     if (searchQuery) {
@@ -224,7 +224,12 @@ export function FileList() {
         {files.map((file) => (
           <Card key={file.id}>
             <CardHeader className="flex flex-row items-start justify-between space-y-0">
-              <CardTitle className="text-lg">{file.title}</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg">{file.title}</CardTitle>
+                {file.is_verified && (
+                  <CheckCircle className="h-5 w-5 text-blue-500" title="Verified" />
+                )}
+              </div>
               <Button
                 variant="ghost"
                 size="icon"

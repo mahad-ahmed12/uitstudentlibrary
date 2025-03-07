@@ -123,6 +123,7 @@ export function FileUpload() {
       setSecretCode("");
       setTitleError("");
     } catch (error) {
+      console.error("Upload error:", error);
       toast({
         title: "Error",
         description: "Failed to upload file. Please try again.",
