@@ -1,10 +1,11 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./card";
 import { Input } from "./input";
 import { Button } from "./button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Trash2, Download, CheckCircle } from "lucide-react";
+import { Trash2, Download } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +19,6 @@ interface SharedFile {
   title: string;
   filename: string;
   created_at: string;
-  is_verified?: boolean;
 }
 
 export function FileList() {
@@ -31,6 +31,7 @@ export function FileList() {
   const [deleteCode, setDeleteCode] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
+  const [publicURL, setPublicURL] = useState<string | null>(null);
 
   useEffect(() => {
     loadFiles();
@@ -40,7 +41,7 @@ export function FileList() {
     console.log("Loading files...");
     let query = supabase
       .from("shared_files")
-      .select("id, title, filename, created_at, is_verified")
+      .select("id, title, filename, created_at")
       .order("created_at", { ascending: false });
 
     if (searchQuery) {
@@ -90,6 +91,7 @@ export function FileList() {
       return;
     }
 
+    // Delete from storage
     const { error: storageError } = await supabase.storage
       .from("files")
       .remove([data.file_path]);
@@ -103,6 +105,7 @@ export function FileList() {
       return;
     }
 
+    // Delete from database
     const { error: dbError } = await supabase
       .from("shared_files")
       .delete()
@@ -149,6 +152,7 @@ export function FileList() {
         return;
       }
 
+      // Check for root access code or the file-specific code
       if (secretCode !== data.secret_code && secretCode !== "41134") {
         toast({
           title: "Access Denied",
@@ -158,10 +162,14 @@ export function FileList() {
         return;
       }
 
+      // Check if user is on iOS
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      
+      // For all devices, use signed URLs which work better across all platforms
       const { data: signedURLData, error: signedURLError } = await supabase.storage
         .from("files")
-        .createSignedUrl(data.file_path, 300);
-
+        .createSignedUrl(data.file_path, 300); // 5 minutes expiry for better user experience
+      
       if (signedURLError || !signedURLData?.signedUrl) {
         toast({
           title: "Error",
@@ -170,43 +178,26 @@ export function FileList() {
         });
         return;
       }
-
-      try {
+      
+      if (isIOS) {
+        // For iOS, open the signed URL in a new tab
+        window.open(signedURLData.signedUrl, '_blank');
         toast({
-          title: "Download Starting",
-          description: "Your file is being prepared for download...",
+          title: "File Access Granted",
+          description: "The file is opening in a new tab.",
         });
-        
-        const response = await fetch(signedURLData.signedUrl);
-        const blob = await response.blob();
-        
-        const blobUrl = window.URL.createObjectURL(blob);
-        
+      } else {
+        // For non-iOS, create a temporary link and click it
         const a = document.createElement("a");
-        a.style.display = "none";
-        a.href = blobUrl;
+        a.href = signedURLData.signedUrl;
         a.download = file.filename;
+        a.style.display = "none";
         document.body.appendChild(a);
         a.click();
-        
-        window.URL.revokeObjectURL(blobUrl);
+        window.URL.revokeObjectURL(signedURLData.signedUrl);
         document.body.removeChild(a);
-        
-        toast({
-          title: "Success",
-          description: "File downloaded successfully.",
-        });
-      } catch (fetchError) {
-        console.error("Fetch error:", fetchError);
-        
-        toast({
-          title: "Using Alternative Method",
-          description: "Download is opening in a new tab. You may need to save the file manually.",
-        });
-        
-        window.open(signedURLData.signedUrl, '_blank');
       }
-
+      
       setSelectedFile(null);
       setSecretCode("");
     } catch (err) {
@@ -233,14 +224,7 @@ export function FileList() {
         {files.map((file) => (
           <Card key={file.id}>
             <CardHeader className="flex flex-row items-start justify-between space-y-0">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-lg">{file.title}</CardTitle>
-                {file.is_verified && (
-                  <span title="Verified">
-                    <CheckCircle className="h-5 w-5 text-blue-500" />
-                  </span>
-                )}
-              </div>
+              <CardTitle className="text-lg">{file.title}</CardTitle>
               <Button
                 variant="ghost"
                 size="icon"
