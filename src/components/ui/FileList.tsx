@@ -171,21 +171,40 @@ export function FileList() {
         return;
       }
 
-      if (window.navigator.userAgent.includes("iPad") || window.navigator.userAgent.includes("iPhone") || window.navigator.userAgent.includes("iPod")) {
-        window.open(signedURLData.signedUrl, '_blank');
+      try {
         toast({
-          title: "File Access Granted",
-          description: "The file is opening in a new tab.",
+          title: "Download Starting",
+          description: "Your file is being prepared for download...",
         });
-      } else {
+        
+        const response = await fetch(signedURLData.signedUrl);
+        const blob = await response.blob();
+        
+        const blobUrl = window.URL.createObjectURL(blob);
+        
         const a = document.createElement("a");
-        a.href = signedURLData.signedUrl;
-        a.download = file.filename;
         a.style.display = "none";
+        a.href = blobUrl;
+        a.download = file.filename;
         document.body.appendChild(a);
         a.click();
-        window.URL.revokeObjectURL(signedURLData.signedUrl);
+        
+        window.URL.revokeObjectURL(blobUrl);
         document.body.removeChild(a);
+        
+        toast({
+          title: "Success",
+          description: "File downloaded successfully.",
+        });
+      } catch (fetchError) {
+        console.error("Fetch error:", fetchError);
+        
+        toast({
+          title: "Using Alternative Method",
+          description: "Download is opening in a new tab. You may need to save the file manually.",
+        });
+        
+        window.open(signedURLData.signedUrl, '_blank');
       }
 
       setSelectedFile(null);
