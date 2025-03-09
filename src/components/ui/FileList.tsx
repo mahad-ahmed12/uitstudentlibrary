@@ -78,6 +78,7 @@ export function FileList() {
           description: "Failed to verify access.",
           variant: "destructive",
         });
+        setIsDownloading(false);
         return;
       }
 
@@ -88,16 +89,14 @@ export function FileList() {
           description: "Incorrect secret code.",
           variant: "destructive",
         });
+        setIsDownloading(false);
         return;
       }
 
-      // Check if user is on iOS
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      
-      // For all devices, use signed URLs which work better across all platforms
+      // Get signed URL
       const { data: signedURLData, error: signedURLError } = await supabase.storage
         .from("files")
-        .createSignedUrl(data.file_path, 300); // 5 minutes expiry for better user experience
+        .createSignedUrl(data.file_path, 300); // 5 minutes expiry
       
       if (signedURLError || !signedURLData?.signedUrl) {
         toast({
@@ -105,26 +104,49 @@ export function FileList() {
           description: "Failed to create download link.",
           variant: "destructive",
         });
+        setIsDownloading(false);
         return;
       }
       
-      if (isIOS) {
-        // For iOS, open the signed URL in a new tab
-        window.open(signedURLData.signedUrl, '_blank');
+      // Download file directly using fetch
+      try {
+        const response = await fetch(signedURLData.signedUrl);
+        const blob = await response.blob();
+        
+        // Create a temporary URL for the blob
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        // Create a download link
+        const downloadLink = document.createElement("a");
+        downloadLink.href = blobUrl;
+        downloadLink.download = file.filename;
+        downloadLink.style.display = "none";
+        
+        // Add to the DOM, trigger click, and remove it
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        
+        // Clean up
+        setTimeout(() => {
+          document.body.removeChild(downloadLink);
+          window.URL.revokeObjectURL(blobUrl);
+        }, 100);
+        
         toast({
-          title: "File Access Granted",
-          description: "The file is opening in a new tab.",
+          title: "Success",
+          description: "File download started.",
         });
-      } else {
-        // For non-iOS, create a temporary link and click it
-        const a = document.createElement("a");
-        a.href = signedURLData.signedUrl;
-        a.download = file.filename;
-        a.style.display = "none";
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(signedURLData.signedUrl);
-        document.body.removeChild(a);
+        
+      } catch (fetchError) {
+        console.error("Fetch error:", fetchError);
+        
+        // Fallback to opening in a new tab
+        window.open(signedURLData.signedUrl, '_blank');
+        
+        toast({
+          title: "Download Notice",
+          description: "We couldn't download the file directly. It has been opened in a new tab for you to save.",
+        });
       }
       
       setSelectedFile(null);
