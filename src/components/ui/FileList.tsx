@@ -6,13 +6,6 @@ import { Button } from "./button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Download } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "./dialog";
 
 interface SharedFile {
   id: string;
@@ -108,46 +101,41 @@ export function FileList() {
         return;
       }
       
-      // Download file directly using fetch
-      try {
-        const response = await fetch(signedURLData.signedUrl);
-        const blob = await response.blob();
-        
-        // Create a temporary URL for the blob
-        const blobUrl = window.URL.createObjectURL(blob);
-        
-        // Create a download link
-        const downloadLink = document.createElement("a");
-        downloadLink.href = blobUrl;
-        downloadLink.download = file.filename;
-        downloadLink.style.display = "none";
-        
-        // Add to the DOM, trigger click, and remove it
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        
-        // Clean up
+      // Force download using iframe technique (works better cross-browser)
+      const downloadFrame = document.createElement('iframe');
+      downloadFrame.style.display = 'none';
+      document.body.appendChild(downloadFrame);
+      
+      // Add download attributes to make it work
+      downloadFrame.onload = function() {
+        // This triggers after iframe loads - clean up
         setTimeout(() => {
-          document.body.removeChild(downloadLink);
-          window.URL.revokeObjectURL(blobUrl);
-        }, 100);
-        
-        toast({
-          title: "Success",
-          description: "File download started.",
-        });
-        
-      } catch (fetchError) {
-        console.error("Fetch error:", fetchError);
-        
-        // Fallback to opening in a new tab
-        window.open(signedURLData.signedUrl, '_blank');
-        
-        toast({
-          title: "Download Notice",
-          description: "We couldn't download the file directly. It has been opened in a new tab for you to save.",
-        });
-      }
+          document.body.removeChild(downloadFrame);
+        }, 2000); // Give it time to process
+      };
+      
+      // Set the src with download attributes
+      downloadFrame.src = signedURLData.signedUrl;
+      
+      // Also try the anchor approach as a backup
+      const downloadLink = document.createElement('a');
+      downloadLink.href = signedURLData.signedUrl;
+      downloadLink.download = file.filename;
+      downloadLink.target = '_blank';
+      downloadLink.rel = 'noopener noreferrer';
+      downloadLink.setAttribute('download', file.filename);
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      
+      // Clean up the anchor
+      setTimeout(() => {
+        document.body.removeChild(downloadLink);
+      }, 100);
+      
+      toast({
+        title: "Download Started",
+        description: "Your file download has started. If it doesn't download automatically, check your browser download settings.",
+      });
       
       setSelectedFile(null);
       setSecretCode("");
