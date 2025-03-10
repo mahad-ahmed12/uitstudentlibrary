@@ -13,9 +13,12 @@ export type Database = {
         Row: {
           content_type: string | null
           created_at: string
+          file_count: number | null
           file_path: string
           filename: string
           id: string
+          is_folder: boolean | null
+          is_verified: boolean | null
           secret_code: string
           size: number | null
           title: string
@@ -23,9 +26,12 @@ export type Database = {
         Insert: {
           content_type?: string | null
           created_at?: string
+          file_count?: number | null
           file_path: string
           filename: string
           id?: string
+          is_folder?: boolean | null
+          is_verified?: boolean | null
           secret_code: string
           size?: number | null
           title: string
@@ -33,9 +39,12 @@ export type Database = {
         Update: {
           content_type?: string | null
           created_at?: string
+          file_count?: number | null
           file_path?: string
           filename?: string
           id?: string
+          is_folder?: boolean | null
+          is_verified?: boolean | null
           secret_code?: string
           size?: number | null
           title?: string
