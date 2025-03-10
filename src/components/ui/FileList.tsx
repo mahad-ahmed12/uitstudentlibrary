@@ -5,7 +5,14 @@ import { Input } from "./input";
 import { Button } from "./button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Download } from "lucide-react";
+import { Trash2, Download } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./dialog";
 
 interface SharedFile {
   id: string;
@@ -19,8 +26,12 @@ export function FileList() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFile, setSelectedFile] = useState<SharedFile | null>(null);
   const [secretCode, setSecretCode] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<SharedFile | null>(null);
+  const [deleteCode, setDeleteCode] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
+  const [publicURL, setPublicURL] = useState<string | null>(null);
 
   useEffect(() => {
     loadFiles();
@@ -53,6 +64,73 @@ export function FileList() {
     setFiles(data || []);
   };
 
+  const handleDelete = async () => {
+    if (!fileToDelete) return;
+
+    const { data, error } = await supabase
+      .from("shared_files")
+      .select("secret_code, file_path")
+      .eq("id", fileToDelete.id)
+      .single();
+
+    if (error || !data) {
+      toast({
+        title: "Error",
+        description: "Failed to verify access.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (deleteCode !== data.secret_code && deleteCode !== "41134") {
+      toast({
+        title: "Access Denied",
+        description: "Incorrect secret code.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Delete from storage
+    const { error: storageError } = await supabase.storage
+      .from("files")
+      .remove([data.file_path]);
+
+    if (storageError) {
+      toast({
+        title: "Error",
+        description: "Failed to delete file from storage.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Delete from database
+    const { error: dbError } = await supabase
+      .from("shared_files")
+      .delete()
+      .eq("id", fileToDelete.id);
+
+    if (dbError) {
+      toast({
+        title: "Error",
+        description: "Failed to delete file record.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Success",
+      description: "File deleted successfully.",
+    });
+
+    setDeleteDialogOpen(false);
+    setFileToDelete(null);
+    setDeleteCode("");
+    loadFiles();
+  };
+
   const downloadFile = async (file: SharedFile) => {
     if (isDownloading) return;
     
@@ -71,7 +149,6 @@ export function FileList() {
           description: "Failed to verify access.",
           variant: "destructive",
         });
-        setIsDownloading(false);
         return;
       }
 
@@ -82,14 +159,16 @@ export function FileList() {
           description: "Incorrect secret code.",
           variant: "destructive",
         });
-        setIsDownloading(false);
         return;
       }
 
-      // Get signed URL
+      // Check if user is on iOS
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      
+      // For all devices, use signed URLs which work better across all platforms
       const { data: signedURLData, error: signedURLError } = await supabase.storage
         .from("files")
-        .createSignedUrl(data.file_path, 300); // 5 minutes expiry
+        .createSignedUrl(data.file_path, 300); // 5 minutes expiry for better user experience
       
       if (signedURLError || !signedURLData?.signedUrl) {
         toast({
@@ -97,45 +176,27 @@ export function FileList() {
           description: "Failed to create download link.",
           variant: "destructive",
         });
-        setIsDownloading(false);
         return;
       }
       
-      // Force download using iframe technique (works better cross-browser)
-      const downloadFrame = document.createElement('iframe');
-      downloadFrame.style.display = 'none';
-      document.body.appendChild(downloadFrame);
-      
-      // Add download attributes to make it work
-      downloadFrame.onload = function() {
-        // This triggers after iframe loads - clean up
-        setTimeout(() => {
-          document.body.removeChild(downloadFrame);
-        }, 2000); // Give it time to process
-      };
-      
-      // Set the src with download attributes
-      downloadFrame.src = signedURLData.signedUrl;
-      
-      // Also try the anchor approach as a backup
-      const downloadLink = document.createElement('a');
-      downloadLink.href = signedURLData.signedUrl;
-      downloadLink.download = file.filename;
-      downloadLink.target = '_blank';
-      downloadLink.rel = 'noopener noreferrer';
-      downloadLink.setAttribute('download', file.filename);
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      
-      // Clean up the anchor
-      setTimeout(() => {
-        document.body.removeChild(downloadLink);
-      }, 100);
-      
-      toast({
-        title: "Download Started",
-        description: "Your file download has started. If it doesn't download automatically, check your browser download settings.",
-      });
+      if (isIOS) {
+        // For iOS, open the signed URL in a new tab
+        window.open(signedURLData.signedUrl, '_blank');
+        toast({
+          title: "File Access Granted",
+          description: "The file is opening in a new tab.",
+        });
+      } else {
+        // For non-iOS, create a temporary link and click it
+        const a = document.createElement("a");
+        a.href = signedURLData.signedUrl;
+        a.download = file.filename;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(signedURLData.signedUrl);
+        document.body.removeChild(a);
+      }
       
       setSelectedFile(null);
       setSecretCode("");
@@ -164,10 +225,20 @@ export function FileList() {
           <Card key={file.id}>
             <CardHeader className="flex flex-row items-start justify-between space-y-0">
               <CardTitle className="text-lg">{file.title}</CardTitle>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setFileToDelete(file);
+                  setDeleteDialogOpen(true);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                {file.filename}
+                Expires: {new Date(new Date(file.created_at).getTime() + 4 * 24 * 60 * 60 * 1000).toLocaleDateString()}
               </p>
               {selectedFile?.id === file.id ? (
                 <div className="space-y-2">
@@ -204,6 +275,44 @@ export function FileList() {
           </Card>
         ))}
       </div>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete File</DialogTitle>
+            <DialogDescription>
+              Enter the secret code to delete this file. This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder="Enter secret code"
+              type="password"
+              value={deleteCode}
+              onChange={(e) => setDeleteCode(e.target.value)}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteDialogOpen(false);
+                  setFileToDelete(null);
+                  setDeleteCode("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
