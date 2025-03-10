@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./card";
 import { Input } from "./input";
@@ -158,25 +159,30 @@ export function FileList() {
         return;
       }
 
-      const { data: signedURLData, error: signedURLError } = await supabase.storage
+      // Get the file data directly using download method
+      const { data: fileData, error: downloadError } = await supabase.storage
         .from("files")
-        .createSignedUrl(data.file_path, 300);
+        .download(data.file_path);
       
-      if (signedURLError || !signedURLData?.signedUrl) {
+      if (downloadError || !fileData) {
         toast({
           title: "Error",
-          description: "Failed to create download link.",
+          description: "Failed to download file.",
           variant: "destructive",
         });
         return;
       }
 
+      // Create a blob URL and force download
+      const blob = new Blob([fileData]);
+      const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = signedURLData.signedUrl;
+      a.href = url;
       a.download = file.filename;
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
+      window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
       setSelectedFile(null);
