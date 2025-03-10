@@ -90,7 +90,6 @@ export function FileList() {
       return;
     }
 
-    // Delete from storage
     const { error: storageError } = await supabase.storage
       .from("files")
       .remove([data.file_path]);
@@ -104,7 +103,6 @@ export function FileList() {
       return;
     }
 
-    // Delete from database
     const { error: dbError } = await supabase
       .from("shared_files")
       .delete()
@@ -151,7 +149,6 @@ export function FileList() {
         return;
       }
 
-      // Check for root access code or the file-specific code
       if (secretCode !== data.secret_code && secretCode !== "41134") {
         toast({
           title: "Access Denied",
@@ -161,13 +158,9 @@ export function FileList() {
         return;
       }
 
-      // Check if user is on iOS
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      
-      // For all devices, use signed URLs which work better across all platforms
       const { data: signedURLData, error: signedURLError } = await supabase.storage
         .from("files")
-        .createSignedUrl(data.file_path, 300); // 5 minutes expiry for better user experience
+        .createSignedUrl(data.file_path, 300);
       
       if (signedURLError || !signedURLData?.signedUrl) {
         toast({
@@ -177,28 +170,22 @@ export function FileList() {
         });
         return;
       }
-      
-      if (isIOS) {
-        // For iOS, open the signed URL in a new tab
-        window.open(signedURLData.signedUrl, '_blank');
-        toast({
-          title: "File Access Granted",
-          description: "The file is opening in a new tab.",
-        });
-      } else {
-        // For non-iOS, create a temporary link and click it
-        const a = document.createElement("a");
-        a.href = signedURLData.signedUrl;
-        a.download = file.filename;
-        a.style.display = "none";
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(signedURLData.signedUrl);
-        document.body.removeChild(a);
-      }
+
+      const a = document.createElement("a");
+      a.href = signedURLData.signedUrl;
+      a.download = file.filename;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
       
       setSelectedFile(null);
       setSecretCode("");
+      
+      toast({
+        title: "Success",
+        description: "Download started.",
+      });
     } catch (err) {
       console.error("Download error:", err);
       toast({
