@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./card";
 import { Input } from "./input";
@@ -31,7 +30,6 @@ export function FileList() {
   const [deleteCode, setDeleteCode] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
-  const [publicURL, setPublicURL] = useState<string | null>(null);
 
   useEffect(() => {
     loadFiles();
@@ -159,30 +157,27 @@ export function FileList() {
         return;
       }
 
-      // Get the file data directly using download method
-      const { data: fileData, error: downloadError } = await supabase.storage
+      const { data: publicUrlData } = await supabase.storage
         .from("files")
-        .download(data.file_path);
+        .getPublicUrl(data.file_path);
       
-      if (downloadError || !fileData) {
+      if (!publicUrlData.publicUrl) {
         toast({
           title: "Error",
-          description: "Failed to download file.",
+          description: "Failed to generate download link.",
           variant: "destructive",
         });
         return;
       }
 
-      // Create a blob URL and force download
-      const blob = new Blob([fileData]);
-      const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = publicUrlData.publicUrl;
       a.download = file.filename;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
       setSelectedFile(null);
@@ -190,7 +185,7 @@ export function FileList() {
       
       toast({
         title: "Success",
-        description: "Download started.",
+        description: "Download started. If it doesn't start automatically, check your browser settings.",
       });
     } catch (err) {
       console.error("Download error:", err);
