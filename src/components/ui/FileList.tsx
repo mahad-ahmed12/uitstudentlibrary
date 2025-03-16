@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./card";
 import { Input } from "./input";
@@ -30,6 +31,7 @@ export function FileList() {
   const [deleteCode, setDeleteCode] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
+  const [publicURL, setPublicURL] = useState<string | null>(null);
 
   useEffect(() => {
     loadFiles();
@@ -89,6 +91,7 @@ export function FileList() {
       return;
     }
 
+    // Delete from storage
     const { error: storageError } = await supabase.storage
       .from("files")
       .remove([data.file_path]);
@@ -102,6 +105,7 @@ export function FileList() {
       return;
     }
 
+    // Delete from database
     const { error: dbError } = await supabase
       .from("shared_files")
       .delete()
@@ -148,6 +152,7 @@ export function FileList() {
         return;
       }
 
+      // Check for root access code or the file-specific code
       if (secretCode !== data.secret_code && secretCode !== "41134") {
         toast({
           title: "Access Denied",
@@ -157,36 +162,44 @@ export function FileList() {
         return;
       }
 
-      const { data: publicUrlData } = await supabase.storage
-        .from("files")
-        .getPublicUrl(data.file_path);
+      // Check if user is on iOS
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       
-      if (!publicUrlData.publicUrl) {
+      // For all devices, use signed URLs which work better across all platforms
+      const { data: signedURLData, error: signedURLError } = await supabase.storage
+        .from("files")
+        .createSignedUrl(data.file_path, 300); // 5 minutes expiry for better user experience
+      
+      if (signedURLError || !signedURLData?.signedUrl) {
         toast({
           title: "Error",
-          description: "Failed to generate download link.",
+          description: "Failed to create download link.",
           variant: "destructive",
         });
         return;
       }
-
-      const a = document.createElement("a");
-      a.href = publicUrlData.publicUrl;
-      a.download = file.filename;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      
+      if (isIOS) {
+        // For iOS, open the signed URL in a new tab
+        window.open(signedURLData.signedUrl, '_blank');
+        toast({
+          title: "File Access Granted",
+          description: "The file is opening in a new tab.",
+        });
+      } else {
+        // For non-iOS, create a temporary link and click it
+        const a = document.createElement("a");
+        a.href = signedURLData.signedUrl;
+        a.download = file.filename;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(signedURLData.signedUrl);
+        document.body.removeChild(a);
+      }
       
       setSelectedFile(null);
       setSecretCode("");
-      
-      toast({
-        title: "Success",
-        description: "Download started. If it doesn't start automatically, check your browser settings.",
-      });
     } catch (err) {
       console.error("Download error:", err);
       toast({
@@ -224,6 +237,9 @@ export function FileList() {
               </Button>
             </CardHeader>
             <CardContent>
+              <p className="text-sm text-muted-foreground mb-4">
+                Expires: {new Date(new Date(file.created_at).getTime() + 4 * 24 * 60 * 60 * 1000).toLocaleDateString()}
+              </p>
               {selectedFile?.id === file.id ? (
                 <div className="space-y-2">
                   <Input
